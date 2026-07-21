@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InvoiceIQ — Validation Ledger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --navy-950:#0B1220;
+    --navy-900:#101A2E;
+    --navy-800:#16223A;
+    --gold-500:#C89B3C;
+    --gold-400:#DDB65A;
+    --paper:#F6F3EC;
+    --paper-line:#E4DFD0;
+    --ink:#1B2333;
+    --ink-soft:#5B6478;
+    --ok:#1E7A4C;
+    --ok-bg:#E5F3EA;
+    --warn:#9A6A12;
+    --warn-bg:#FBF0DA;
+    --bad:#A32E2E;
+    --bad-bg:#FBE7E5;
+    --blue:#2C5FA8;
+    --blue-bg:#E7EEF8;
+    --radius:10px;
+  }
+  [data-theme="dark"]{
+    --paper:var(--navy-900);
+    --paper-line:#233152;
+    --ink:#EDEFF5;
+    --ink-soft:#93A0BE;
+    --ok-bg:#123425;
+    --warn-bg:#3A2C0E;
+    --bad-bg:#3A1A18;
+    --blue-bg:#16233D;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--navy-950);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding:32px 24px 64px;
+  }
+  .app{max-width:1180px;margin:0 auto;}
+
+  .topbar{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:28px;color:#EDEFF5;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{width:38px;height:38px;border-radius:8px;background:linear-gradient(135deg,var(--gold-400),var(--gold-500));display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk';font-weight:700;color:var(--navy-950);font-size:16px;}
+  .brand-name{font-family:'Space Grotesk';font-weight:700;font-size:20px;letter-spacing:0.2px;}
+  .brand-sub{font-size:12px;color:#8C97B4;font-family:'IBM Plex Mono';letter-spacing:0.5px;text-transform:uppercase;}
+  .theme-toggle{background:transparent;border:1px solid #2C3A5A;color:#C7CFE3;padding:8px 14px;border-radius:20px;font-size:12px;cursor:pointer;font-family:'Inter';}
+  .theme-toggle:hover{border-color:var(--gold-500);color:var(--gold-400);}
+
+  .ledger{background:var(--paper);border-radius:16px;padding:36px 36px 28px;box-shadow:0 30px 60px rgba(0,0,0,0.35);position:relative;}
+  .ledger-title{font-family:'Space Grotesk';font-weight:600;font-size:22px;margin:0 0 4px;}
+  .ledger-desc{color:var(--ink-soft);font-size:13.5px;margin:0 0 22px;max-width:620px;line-height:1.5;}
+
+  /* Method selector */
+  .method-select{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:26px;}
+  .method-card{
+    border:1.5px solid var(--paper-line);border-radius:12px;padding:18px 20px;cursor:pointer;
+    text-align:left;background:transparent;font-family:'Inter';transition:border-color .15s;
+  }
+  .method-card:hover{border-color:var(--gold-500);}
+  .method-card.active{border-color:var(--gold-500);background:var(--blue-bg);}
+  .method-card .icon{font-size:22px;}
+  .method-card .title{font-family:'Space Grotesk';font-weight:600;font-size:15px;margin:8px 0 4px;}
+  .method-card .desc{font-size:12.5px;color:var(--ink-soft);line-height:1.4;}
+
+  .panel{display:none;}
+  .panel.active{display:block;}
+
+  .toolbar{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap;align-items:center;}
+  .btn{font-family:'Inter';font-weight:600;font-size:13px;padding:10px 16px;border-radius:8px;border:1px solid var(--paper-line);cursor:pointer;background:transparent;color:var(--ink);}
+  .btn:hover{border-color:var(--gold-500);}
+  .btn-primary{background:var(--navy-950);color:#F6F3EC;border-color:var(--navy-950);}
+  [data-theme="dark"] .btn-primary{background:var(--gold-500);color:var(--navy-950);border-color:var(--gold-500);}
+  .btn-primary:hover{opacity:0.92;}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-ghost{color:var(--ink-soft);}
+  .btn-sm{font-size:12px;padding:6px 10px;}
+
+  .doc-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:26px;}
+  .doc-panel{border:1px solid var(--paper-line);border-radius:var(--radius);padding:18px;}
+  .doc-panel h3{font-family:'Space Grotesk';font-size:14px;margin:0 0 14px;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+  .dot-invoice{background:var(--gold-500);}
+  .dot-receipt{background:#4C6B99;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+  .field-row.f3{grid-template-columns:1fr 1fr 1fr;}
+  label{font-size:11px;color:var(--ink-soft);display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;}
+  input[type=text],input[type=date],input[type=number],select,textarea{
+    width:100%;padding:8px 9px;border-radius:6px;border:1px solid var(--paper-line);
+    background:transparent;color:var(--ink);font-family:'Inter';font-size:13px;
+  }
+  textarea{resize:vertical;min-height:44px;font-family:'Inter';}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--gold-500);outline-offset:1px;}
+  .field-note{font-size:10.5px;color:var(--ink-soft);margin:2px 0 8px;}
+
+  .items-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink-soft);margin:14px 0 8px;}
+  table.items{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono';font-size:12.5px;}
+  table.items th{text-align:left;font-family:'Inter';font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ink-soft);border-bottom:1px solid var(--paper-line);padding:6px 4px;}
+  table.items td{padding:5px 4px;border-bottom:1px dashed var(--paper-line);}
+  table.items input{padding:5px 6px;font-size:12px;}
+  .row-remove{background:none;border:none;color:var(--bad);cursor:pointer;font-size:14px;padding:2px 6px;}
+  .row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .add-row{margin-top:8px;font-size:12px;padding:6px 10px;}
+  .import-btn{margin-top:8px;font-size:12px;padding:6px 10px;position:relative;overflow:hidden;}
+  .import-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .import-hint{font-size:10.5px;color:var(--ink-soft);margin-top:4px;}
+
+  /* Upload panel */
+  .upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:20px;}
+  .dropzone{border:2px dashed var(--paper-line);border-radius:12px;padding:24px 18px;text-align:center;transition:border-color .15s,background .15s;position:relative;}
+  .dropzone.drag{border-color:var(--gold-500);background:var(--blue-bg);}
+  .dropzone .icon{font-size:26px;}
+  .dropzone .dz-title{font-family:'Space Grotesk';font-weight:600;font-size:14px;margin:8px 0 3px;}
+  .dropzone .dz-sub{font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;}
+  .dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .file-list{list-style:none;margin:14px 0 0;padding:0;text-align:left;display:flex;flex-direction:column;gap:6px;}
+  .file-item{display:flex;align-items:center;gap:10px;border:1px solid var(--paper-line);border-radius:8px;padding:6px 8px;font-size:12px;}
+  .file-thumb{width:32px;height:32px;border-radius:5px;object-fit:cover;background:var(--paper-line);flex-shrink:0;}
+  .file-thumb.icon-only{display:flex;align-items:center;justify-content:center;font-size:14px;}
+  .file-meta{flex:1;overflow:hidden;}
+  .file-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;}
+  .file-size{color:var(--ink-soft);font-size:10.5px;}
+  .file-remove{background:none;border:none;color:var(--bad);cursor:pointer;font-size:13px;}
+  .extract-status{font-size:11.5px;color:var(--ink-soft);margin-top:10px;min-height:16px;}
+  .extract-status.working{color:var(--warn);}
+  .extract-status.ok{color:var(--ok);}
+  .extract-status.err{color:var(--bad);}
+  .extracted-box{margin-top:10px;border:1px solid var(--paper-line);border-radius:8px;padding:10px;font-family:'IBM Plex Mono';font-size:11px;max-height:120px;overflow:auto;text-align:left;color:var(--ink-soft);background:rgba(0,0,0,0.03);display:none;white-space:pre-wrap;}
+  .notice{border-radius:8px;padding:10px 14px;font-size:12.5px;margin-bottom:16px;display:none;}
+  .notice.show{display:block;}
+  .notice-ok{background:var(--ok-bg);color:var(--ok);}
+  .notice-warn{background:var(--warn-bg);color:var(--warn);}
+
+  .verdict-wrap{display:flex;justify-content:center;margin:8px 0 26px;min-height:1px;}
+  .stamp{display:none;border:3px solid;border-radius:10px;padding:10px 28px;font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:3px;transform:rotate(-4deg);text-transform:uppercase;}
+  .stamp.show{display:inline-block;animation:stampIn 0.35s ease-out;}
+  @keyframes stampIn{0%{opacity:0;transform:rotate(-4deg) scale(1.6);}100%{opacity:1;transform:rotate(-4deg) scale(1);}}
+  .stamp.approve{color:var(--ok);border-color:var(--ok);background:var(--ok-bg);}
+  .stamp.review{color:var(--warn);border-color:var(--warn);background:var(--warn-bg);}
+  .stamp.reject{color:var(--bad);border-color:var(--bad);background:var(--bad-bg);}
+
+  .summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+  .summary-card{border:1px solid var(--paper-line);border-radius:var(--radius);padding:14px 16px;}
+  .summary-card .label{font-size:10.5px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink-soft);font-weight:700;}
+  .summary-card .value{font-family:'Space Grotesk';font-size:22px;font-weight:700;margin-top:6px;}
+
+  .section-title{font-family:'Space Grotesk';font-size:16px;font-weight:600;margin:6px 0 12px;}
+  table.compare{width:100%;border-collapse:collapse;margin-bottom:26px;font-size:12.5px;}
+  table.compare th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ink-soft);font-weight:700;padding:8px 6px;border-bottom:2px solid var(--paper-line);}
+  table.compare td{padding:8px 6px;border-bottom:1px solid var(--paper-line);font-family:'IBM Plex Mono';}
+  .status-pill{font-family:'Inter';font-weight:600;font-size:11px;padding:3px 9px;border-radius:12px;display:inline-block;}
+  .status-match{background:var(--ok-bg);color:var(--ok);}
+  .status-minor{background:var(--warn-bg);color:var(--warn);}
+  .status-mismatch{background:var(--bad-bg);color:var(--bad);}
+  tr.hl-minor td{background:color-mix(in srgb, var(--warn-bg) 55%, transparent);}
+  tr.hl-mismatch td{background:color-mix(in srgb, var(--bad-bg) 55%, transparent);}
+
+  .disc-list{list-style:none;margin:0 0 26px;padding:0;display:flex;flex-direction:column;gap:8px;}
+  .disc-item{border-left:3px solid var(--paper-line);padding:9px 12px;border-radius:6px;background:var(--paper-line);font-size:13px;display:flex;justify-content:space-between;gap:12px;align-items:center;}
+  [data-theme="dark"] .disc-item{background:#1C2740;}
+  .disc-item.sev-high{border-left-color:var(--bad);}
+  .disc-item.sev-medium{border-left-color:var(--warn);}
+  .disc-item.sev-low{border-left-color:var(--ok);}
+  .sev-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink-soft);white-space:nowrap;}
+  .empty-note{color:var(--ink-soft);font-size:13px;font-style:italic;}
+
+  footer{display:flex;justify-content:flex-end;margin-top:18px;}
+  footer span{font-size:11px;color:#8C97B4;letter-spacing:0.2px;}
+
+  @media (max-width:760px){
+    .doc-grid,.upload-grid,.method-select{grid-template-columns:1fr;}
+    .summary-grid{grid-template-columns:1fr 1fr;}
+    .field-row,.field-row.f3{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body data-theme="light">
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">iQ</div>
+      <div>
+        <div class="brand-name">InvoiceIQ</div>
+        <div class="brand-sub">Validation Ledger</div>
+      </div>
+    </div>
+    <button class="theme-toggle" id="themeToggle">Dark mode</button>
+  </div>
+
+  <div class="ledger">
+    <h1 class="ledger-title">Invoice vs. Shipping Receipt Validator</h1>
+    <p class="ledger-desc">Choose how to provide your documents. Both paths feed the exact same matching, scoring, and reporting engine — the only difference is how the data gets into the form.</p>
+
+    <div class="method-select">
+      <button class="method-card active" id="method-manual" type="button">
+        <div class="icon">✍️</div>
+        <div class="title">Manual Entry</div>
+        <div class="desc">Fill in invoice and shipping receipt details using a structured form.</div>
+      </button>
+      <button class="method-card" id="method-upload" type="button">
+        <div class="icon">📄</div>
+        <div class="title">Upload Documents</div>
+        <div class="desc">Upload PDFs or images and auto-fill the form — review and edit before validating.</div>
+      </button>
+    </div>
+
+    <!-- ================= UPLOAD PANEL ================= -->
+    <div class="panel" id="panel-upload">
+      <div class="notice notice-warn" id="ocrNotice">
+        Extraction runs entirely in your browser (no server). It reliably auto-fills header fields from text-based PDFs, and attempts OCR on images. Always review extracted values — this is a lightweight demo of the extraction step, not the full production AI pipeline.
+      </div>
+      <div class="upload-grid">
+        <div class="doc-panel">
+          <h3><span class="dot dot-invoice"></span>Invoice Documents</h3>
+          <div class="dropzone" id="dz-inv">
+            <input type="file" id="file-inv" multiple accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif">
+            <div class="icon">⬆️</div>
+            <div class="dz-title">Drag &amp; drop or click to upload</div>
+            <div class="dz-sub">PDF, PNG, JPG, JPEG, TIFF · multiple files supported</div>
+          </div>
+          <ul class="file-list" id="filelist-inv"></ul>
+          <div class="row-actions" style="margin-top:12px;">
+            <button class="btn btn-primary btn-sm" id="extract-inv" disabled>Extract &amp; auto-fill invoice form</button>
+          </div>
+          <div class="extract-status" id="status-inv"></div>
+          <pre class="extracted-box" id="extracted-inv"></pre>
+        </div>
+
+        <div class="doc-panel">
+          <h3><span class="dot dot-receipt"></span>Shipping Receipt Documents</h3>
+          <div class="dropzone" id="dz-rec">
+            <input type="file" id="file-rec" multiple accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif">
+            <div class="icon">⬆️</div>
+            <div class="dz-title">Drag &amp; drop or click to upload</div>
+            <div class="dz-sub">PDF, PNG, JPG, JPEG, TIFF · multiple files supported</div>
+          </div>
+          <ul class="file-list" id="filelist-rec"></ul>
+          <div class="row-actions" style="margin-top:12px;">
+            <button class="btn btn-primary btn-sm" id="extract-rec" disabled>Extract &amp; auto-fill receipt form</button>
+          </div>
+          <div class="extract-status" id="status-rec"></div>
+          <pre class="extracted-box" id="extracted-rec"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= MANUAL / REVIEW PANEL ================= -->
+    <div class="panel active" id="panel-manual">
+      <div class="notice notice-ok" id="autofillNotice"></div>
+
+      <div class="toolbar">
+        <button class="btn" id="loadSample">Load sample data</button>
+        <button class="btn btn-ghost" id="clearAll">Clear all</button>
+        <button class="btn btn-primary" id="runValidation">Run validation</button>
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+          <label style="margin:0;">Tolerance %</label>
+          <input type="number" id="tolerance" value="2" min="0" max="20" style="width:64px;">
+        </div>
+      </div>
+
+      <div class="doc-grid">
+        <div class="doc-panel">
+          <h3><span class="dot dot-invoice"></span>Invoice</h3>
+          <div class="field-row">
+            <div><label>Invoice #</label><input type="text" id="inv-number" placeholder="INV-10432"></div>
+            <div><label>Supplier Name</label><input type="text" id="inv-supplier" placeholder="Acme Steel Co."></div>
+          </div>
+          <div class="field-row">
+            <div><label>PO Number</label><input type="text" id="inv-po" placeholder="PO-5521"></div>
+            <div><label>Currency</label>
+              <select id="inv-currency">
+                <option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>AUD</option><option>CAD</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row">
+            <div><label>Invoice Date</label><input type="date" id="inv-date"></div>
+            <div><label>Due Date</label><input type="date" id="inv-due"></div>
+          </div>
+
+          <div class="items-title">Line items</div>
+          <table class="items" id="inv-table">
+            <thead><tr><th style="width:32%">Item Name</th><th style="width:16%">SKU/Code</th><th style="width:12%">Qty</th><th style="width:16%">Unit Price</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="row-actions">
+            <button class="btn add-row" data-target="inv-table">+ Add Item</button>
+            <button class="btn import-btn" type="button">Import CSV/Excel
+              <input type="file" class="import-file" data-target="inv" accept=".csv,.xlsx,.xls">
+            </button>
+          </div>
+          <div class="import-hint">Columns: product, sku, qty, price</div>
+
+          <div class="field-row f3" style="margin-top:16px;">
+            <div><label>Tax</label><input type="number" id="inv-tax" placeholder="0.00" step="0.01"></div>
+            <div><label>Discount</label><input type="number" id="inv-discount" placeholder="0.00" step="0.01"></div>
+            <div><label>Shipping Charges</label><input type="number" id="inv-shippingcharge" placeholder="0.00" step="0.01"></div>
+          </div>
+          <div class="field-row">
+            <div>
+              <label>Total Amount</label>
+              <input type="number" id="inv-total" placeholder="0.00" step="0.01">
+              <div class="field-note"><a href="#" id="recalcTotal">Recalculate from items + tax − discount + shipping</a></div>
+            </div>
+            <div></div>
+          </div>
+          <label>Additional Notes</label>
+          <textarea id="inv-notes" placeholder="Any context worth noting about this invoice..."></textarea>
+        </div>
+
+        <div class="doc-panel">
+          <h3><span class="dot dot-receipt"></span>Shipping Receipt</h3>
+          <div class="field-row">
+            <div><label>Receipt #</label><input type="text" id="rec-number" placeholder="GRN-8814"></div>
+            <div><label>Supplier Name</label><input type="text" id="rec-supplier" placeholder="Acme Steel Co."></div>
+          </div>
+          <div class="field-row">
+            <div><label>PO Number</label><input type="text" id="rec-po" placeholder="PO-5521"></div>
+            <div><label>Delivery Date</label><input type="date" id="rec-date"></div>
+          </div>
+          <div class="field-row">
+            <div><label>Warehouse Location</label><input type="text" id="rec-warehouse" placeholder="Warehouse 3 — Dock B"></div>
+            <div><label>Receiver Name</label><input type="text" id="rec-receiver" placeholder="J. Alvarez"></div>
+          </div>
+
+          <div class="items-title">Line items</div>
+          <table class="items" id="rec-table">
+            <thead><tr><th style="width:32%">Item Name</th><th style="width:16%">SKU/Code</th><th style="width:16%">Qty Received</th><th style="width:12%"></th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="row-actions">
+            <button class="btn add-row" data-target="rec-table">+ Add Item</button>
+            <button class="btn import-btn" type="button">Import CSV/Excel
+              <input type="file" class="import-file" data-target="rec" accept=".csv,.xlsx,.xls">
+            </button>
+          </div>
+          <div class="import-hint">Columns: product, sku, qty</div>
+
+          <label style="margin-top:16px;">Additional Notes</label>
+          <textarea id="rec-notes" placeholder="Any context worth noting about this delivery..."></textarea>
+        </div>
+      </div>
+
+      <div class="verdict-wrap"><div class="stamp" id="stamp"></div></div>
+
+      <div id="results" style="display:none;">
+        <div class="summary-grid">
+          <div class="summary-card"><div class="label">Confidence score</div><div class="value" id="sum-confidence">—</div></div>
+          <div class="summary-card"><div class="label">Risk level</div><div class="value" id="sum-risk">—</div></div>
+          <div class="summary-card"><div class="label">Discrepancies</div><div class="value" id="sum-disc">—</div></div>
+          <div class="summary-card"><div class="label">Amount variance</div><div class="value" id="sum-variance">—</div></div>
+        </div>
+
+        <div class="section-title">Item comparison</div>
+        <table class="compare">
+          <thead><tr><th>Item</th><th>SKU</th><th>Invoiced</th><th>Received</th><th>Diff</th><th>Unit Price</th><th>Status</th></tr></thead>
+          <tbody id="compare-body"></tbody>
+        </table>
+
+        <div class="section-title">Discrepancies &amp; explanations</div>
+        <ul class="disc-list" id="disc-list"></ul>
+      </div>
+    </div>
+
+  </div>
+
+  <footer><span>Project by Khushboo Rathi</span></footer>
+</div>
+
+<script>
+/* ============ Method switcher ============ */
+const methodManualBtn = document.getElementById('method-manual');
+const methodUploadBtn = document.getElementById('method-upload');
+const panelManual = document.getElementById('panel-manual');
+const panelUpload = document.getElementById('panel-upload');
+
+function showMethod(which){
+  methodManualBtn.classList.toggle('active', which==='manual');
+  methodUploadBtn.classList.toggle('active', which==='upload');
+  panelManual.classList.toggle('active', which==='manual');
+  panelUpload.classList.toggle('active', which==='upload');
+}
+methodManualBtn.addEventListener('click', ()=>showMethod('manual'));
+methodUploadBtn.addEventListener('click', ()=>showMethod('upload'));
+
+/* ============ Line item rows ============ */
+const invBody = document.querySelector('#inv-table tbody');
+const recBody = document.querySelector('#rec-table tbody');
+
+function makeRow(kind){
+  const tr = document.createElement('tr');
+  if(kind==='inv'){
+    tr.innerHTML = `
+      <td><input type="text" class="f-product" placeholder="Steel Bracket 4in"></td>
+      <td><input type="text" class="f-sku" placeholder="STL-4021"></td>
+      <td><input type="number" class="f-qty" placeholder="0" min="0"></td>
+      <td><input type="number" class="f-price" placeholder="0.00" step="0.01" min="0"></td>
+      <td><button class="row-remove">✕</button></td>`;
+  } else {
+    tr.innerHTML = `
+      <td><input type="text" class="f-product" placeholder="Steel Bracket 4in"></td>
+      <td><input type="text" class="f-sku" placeholder="STL-4021"></td>
+      <td><input type="number" class="f-qty" placeholder="0" min="0"></td>
+      <td></td>
+      <td><button class="row-remove">✕</button></td>`;
+  }
+  tr.querySelector('.row-remove').addEventListener('click', ()=> tr.remove());
+  return tr;
+}
+
+document.querySelectorAll('.add-row').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const targetId = btn.dataset.target;
+    const body = document.querySelector('#'+targetId+' tbody');
+    body.appendChild(makeRow(targetId==='inv-table' ? 'inv' : 'rec'));
+  });
+});
+
+function addRows(n, kind){
+  const body = kind==='inv' ? invBody : recBody;
+  for(let i=0;i<n;i++) body.appendChild(makeRow(kind));
+}
+addRows(3,'inv');
+addRows(3,'rec');
+
+/* ============ Theme ============ */
+document.getElementById('themeToggle').addEventListener('click', ()=>{
+  const body = document.body;
+  const isDark = body.getAttribute('data-theme')==='dark';
+  body.setAttribute('data-theme', isDark ? 'light':'dark');
+  document.getElementById('themeToggle').textContent = isDark ? 'Dark mode' : 'Light mode';
+});
+
+/* ============ Clear / Sample ============ */
+const ALL_HEADER_IDS = ['inv-number','inv-supplier','inv-po','inv-currency','inv-date','inv-due','inv-tax','inv-discount','inv-shippingcharge','inv-total','inv-notes','rec-number','rec-supplier','rec-po','rec-date','rec-warehouse','rec-receiver','rec-notes'];
+
+document.getElementById('clearAll').addEventListener('click', ()=>{
+  ALL_HEADER_IDS.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  invBody.innerHTML=''; recBody.innerHTML='';
+  addRows(3,'inv'); addRows(3,'rec');
+  hideResults();
+  hideAutofillNotice();
+});
+
+document.getElementById('loadSample').addEventListener('click', ()=>{
+  document.getElementById('inv-number').value='INV-10432';
+  document.getElementById('inv-supplier').value='Acme Steel Co.';
+  document.getElementById('inv-po').value='PO-5521';
+  document.getElementById('inv-date').value='2026-07-15';
+  document.getElementById('inv-due').value='2026-08-14';
+  document.getElementById('inv-tax').value='340.00';
+  document.getElementById('inv-discount').value='0';
+  document.getElementById('inv-shippingcharge').value='0';
+  document.getElementById('rec-number').value='GRN-8814';
+  document.getElementById('rec-supplier').value='Acme Steel Co.';
+  document.getElementById('rec-po').value='PO-5521';
+  document.getElementById('rec-date').value='2026-07-14';
+  document.getElementById('rec-warehouse').value='Warehouse 3 — Dock B';
+  document.getElementById('rec-receiver').value='J. Alvarez';
+
+  invBody.innerHTML=''; recBody.innerHTML='';
+  const invData = [
+    ['Steel Bracket 4in','STL-4021',500,2.10],
+    ['Copper Wire 10m','CPW-1090',200,5.40],
+    ['Aluminum Panel','ALP-3305',100,12.75],
+    ['Hex Bolt M8','HXB-0088',1000,0.15],
+  ];
+  const recData = [
+    ['Steel Bracket 4in','STL-4021',500],
+    ['Copper Wire 10m','CPW-1090',150],
+    ['Aluminum Panel','ALP-3305',100],
+  ];
+  invData.forEach(d=>{
+    const row = makeRow('inv');
+    row.querySelector('.f-product').value=d[0];
+    row.querySelector('.f-sku').value=d[1];
+    row.querySelector('.f-qty').value=d[2];
+    row.querySelector('.f-price').value=d[3];
+    invBody.appendChild(row);
+  });
+  recData.forEach(d=>{
+    const row = makeRow('rec');
+    row.querySelector('.f-product').value=d[0];
+    row.querySelector('.f-sku').value=d[1];
+    row.querySelector('.f-qty').value=d[2];
+    recBody.appendChild(row);
+  });
+  document.getElementById('recalcTotal').click();
+  hideResults();
+});
+
+document.getElementById('recalcTotal').addEventListener('click', (e)=>{
+  e.preventDefault();
+  const items = readItems(invBody);
+  const sum = items.reduce((s,i)=> s + (i.qty * (i.price||0)), 0);
+  const tax = parseFloat(document.getElementById('inv-tax').value)||0;
+  const discount = parseFloat(document.getElementById('inv-discount').value)||0;
+  const ship = parseFloat(document.getElementById('inv-shippingcharge').value)||0;
+  document.getElementById('inv-total').value = (sum + tax - discount + ship).toFixed(2);
+});
+
+/* ============ Read + match + validate (core engine) ============ */
+function readItems(body){
+  const rows = [...body.querySelectorAll('tr')];
+  return rows.map(r=>({
+    product: r.querySelector('.f-product').value.trim(),
+    sku: r.querySelector('.f-sku').value.trim().toUpperCase(),
+    qty: parseFloat(r.querySelector('.f-qty').value) || 0,
+    price: r.querySelector('.f-price') ? (parseFloat(r.querySelector('.f-price').value) || 0) : null,
+  })).filter(x=>x.product || x.sku);
+}
+
+function normalize(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+function similarity(a,b){
+  a = normalize(a); b = normalize(b);
+  if(!a || !b) return 0;
+  if(a===b) return 1;
+  const wa = new Set(a.match(/.{1,3}/g));
+  const wb = new Set(b.match(/.{1,3}/g));
+  let inter=0;
+  wa.forEach(g=>{ if(wb.has(g)) inter++; });
+  return inter / Math.max(wa.size, wb.size, 1);
+}
+
+function matchItems(invItems, recItems){
+  const matches = [];
+  const usedRec = new Set();
+  invItems.forEach(inv=>{
+    let best=-1, bestScore=0;
+    recItems.forEach((rec,i)=>{
+      if(usedRec.has(i)) return;
+      let score = 0;
+      if(inv.sku && rec.sku && inv.sku===rec.sku) score = 1;
+      else score = similarity(inv.product, rec.product) * 0.9;
+      if(score>bestScore){ bestScore=score; best=i; }
+    });
+    if(best>=0 && bestScore>=0.35){
+      usedRec.add(best);
+      matches.push({inv, rec:recItems[best], matchScore:bestScore});
+    } else {
+      matches.push({inv, rec:null, matchScore:0});
+    }
+  });
+  recItems.forEach((rec,i)=>{
+    if(!usedRec.has(i)) matches.push({inv:null, rec, matchScore:0});
+  });
+  return matches;
+}
+
+function fmtMoney(n){ return '$'+n.toFixed(2); }
+
+function runValidation(){
+  const invItems = readItems(invBody);
+  const recItems = readItems(recBody);
+  const tolerance = (parseFloat(document.getElementById('tolerance').value)||0)/100;
+
+  if(invItems.length===0 || recItems.length===0){
+    alert('Add at least one line item to both the invoice and the receipt (or import a CSV/Excel file).');
+    return;
+  }
+
+  const matches = matchItems(invItems, recItems);
+  const discrepancies = [];
+  let matchedCount=0, minorCount=0, mismatchCount=0;
+  const compareRows = [];
+
+  matches.forEach(m=>{
+    if(m.inv && m.rec){
+      const qtyDiff = m.rec.qty - m.inv.qty;
+      const qtyPct = m.inv.qty>0 ? Math.abs(qtyDiff)/m.inv.qty : (qtyDiff===0?0:1);
+      let status='match';
+      if(qtyDiff!==0){ status = qtyPct<=tolerance ? 'minor' : 'mismatch'; }
+      if(status==='match') matchedCount++;
+      if(status==='minor') minorCount++;
+      if(status==='mismatch') mismatchCount++;
+
+      compareRows.push({product:m.inv.product, sku:m.inv.sku||m.rec.sku, invoiced:m.inv.qty, received:m.rec.qty, diff:qtyDiff, price:m.inv.price, status});
+
+      if(status!=='match'){
+        discrepancies.push({severity: status==='mismatch' ? 'high':'medium', text: `Quantity mismatch on ${m.inv.product||m.inv.sku}: invoiced ${m.inv.qty}, received ${m.rec.qty} (${qtyDiff>0?'+':''}${qtyDiff}, ${(qtyPct*100).toFixed(1)}%).`});
+      }
+      if(m.matchScore<0.6 && m.matchScore>0){
+        discrepancies.push({severity:'low', text:`Line matched by fuzzy name similarity only (${(m.matchScore*100).toFixed(0)}% confidence) — "${m.inv.product}" vs "${m.rec.product}". Verify this is the same item.`});
+      }
+    } else if(m.inv && !m.rec){
+      mismatchCount++;
+      compareRows.push({product:m.inv.product, sku:m.inv.sku, invoiced:m.inv.qty, received:0, diff:-m.inv.qty, price:m.inv.price, status:'mismatch'});
+      discrepancies.push({severity:'high', text:`${m.inv.product||m.inv.sku} was invoiced but not found on the shipping receipt — billed without confirmed delivery.`});
+    } else if(!m.inv && m.rec){
+      mismatchCount++;
+      compareRows.push({product:m.rec.product, sku:m.rec.sku, invoiced:0, received:m.rec.qty, diff:m.rec.qty, price:null, status:'mismatch'});
+      discrepancies.push({severity:'medium', text:`${m.rec.product||m.rec.sku} was received but not found on the invoice — may be unbilled or invoiced separately.`});
+    }
+  });
+
+  const invSupplier = document.getElementById('inv-supplier').value.trim();
+  const recSupplier = document.getElementById('rec-supplier').value.trim();
+  const invPO = document.getElementById('inv-po').value.trim();
+  const recPO = document.getElementById('rec-po').value.trim();
+  const invDate = document.getElementById('inv-date').value;
+  const recDate = document.getElementById('rec-date').value;
+  const invTotalField = parseFloat(document.getElementById('inv-total').value);
+
+  if(invPO && recPO && invPO.toLowerCase()!==recPO.toLowerCase()){
+    discrepancies.push({severity:'medium', text:`PO number mismatch: invoice references "${invPO}", receipt references "${recPO}".`});
+  }
+  if(invSupplier && recSupplier && similarity(invSupplier, recSupplier) < 0.5){
+    discrepancies.push({severity:'medium', text:`Supplier name mismatch: invoice lists "${invSupplier}", receipt lists "${recSupplier}".`});
+  }
+  if(invDate && recDate && new Date(recDate) > new Date(invDate)){
+    discrepancies.push({severity:'low', text:`Delivery date (${recDate}) falls after the invoice date (${invDate}) — confirm invoice wasn't issued before delivery.`});
+  }
+
+  let lineTotal=0, receivedValueAtInvoicePrice=0;
+  compareRows.forEach(r=>{
+    if(r.price!=null){
+      lineTotal += r.invoiced * r.price;
+      receivedValueAtInvoicePrice += r.received * r.price;
+    }
+  });
+  const tax = parseFloat(document.getElementById('inv-tax').value)||0;
+  const discount = parseFloat(document.getElementById('inv-discount').value)||0;
+  const ship = parseFloat(document.getElementById('inv-shippingcharge').value)||0;
+  const computedTotal = lineTotal + tax - discount + ship;
+
+  if(!isNaN(invTotalField) && invTotalField>0 && Math.abs(invTotalField - computedTotal) > 0.01){
+    const diff = invTotalField - computedTotal;
+    discrepancies.push({severity: Math.abs(diff)/computedTotal > 0.02 ? 'high':'low', text:`Stated Total Amount ($${invTotalField.toFixed(2)}) doesn't match line items + tax − discount + shipping ($${computedTotal.toFixed(2)}), a difference of $${diff.toFixed(2)}.`});
+  }
+
+  const variance = lineTotal - receivedValueAtInvoicePrice;
+  const variancePct = lineTotal>0 ? (variance/lineTotal)*100 : 0;
+
+  const total = compareRows.length || 1;
+  const confidence = Math.max(0, Math.round(100 * (matchedCount + minorCount*0.6) / total));
+  const highSev = discrepancies.filter(d=>d.severity==='high').length;
+  const medSev = discrepancies.filter(d=>d.severity==='medium').length;
+
+  let risk='Low', verdict='approve', verdictLabel='Approved';
+  if(highSev>0 || variancePct>10){ risk='High'; verdict='reject'; verdictLabel='Rejected'; }
+  else if(medSev>0 || minorCount>0 || variancePct>2){ risk='Medium'; verdict='review'; verdictLabel='Needs Review'; }
+
+  renderResults({confidence, risk, discrepancies, compareRows, variance, variancePct, verdict, verdictLabel});
+}
+
+function renderResults(r){
+  document.getElementById('results').style.display='block';
+  document.getElementById('sum-confidence').textContent = r.confidence+'%';
+  document.getElementById('sum-risk').textContent = r.risk;
+  document.getElementById('sum-disc').textContent = r.discrepancies.length;
+  document.getElementById('sum-variance').textContent = (r.variance>=0?'+':'') + fmtMoney(Math.abs(r.variance)) + ' (' + r.variancePct.toFixed(1) + '%)';
+
+  const stamp = document.getElementById('stamp');
+  stamp.className = 'stamp show ' + r.verdict;
+  stamp.textContent = r.verdict==='approve' ? '✓ Approved' : r.verdict==='review' ? '⚠ Needs Review' : '✕ Rejected';
+
+  const body = document.getElementById('compare-body');
+  body.innerHTML='';
+  r.compareRows.forEach(row=>{
+    const tr = document.createElement('tr');
+    if(row.status==='minor') tr.className='hl-minor';
+    if(row.status==='mismatch') tr.className='hl-mismatch';
+    const pillClass = row.status==='match' ? 'status-match' : row.status==='minor' ? 'status-minor' : 'status-mismatch';
+    const pillText = row.status==='match' ? '✓ Match' : row.status==='minor' ? '⚠ Minor variance' : '✕ Mismatch';
+    tr.innerHTML = `
+      <td style="font-family:'Inter';">${row.product||'—'}</td>
+      <td>${row.sku||'—'}</td>
+      <td>${row.invoiced}</td>
+      <td>${row.received}</td>
+      <td>${row.diff>0?'+':''}${row.diff}</td>
+      <td>${row.price!=null ? fmtMoney(row.price) : '—'}</td>
+      <td><span class="status-pill ${pillClass}">${pillText}</span></td>`;
+    body.appendChild(tr);
+  });
+
+  const list = document.getElementById('disc-list');
+  list.innerHTML='';
+  if(r.discrepancies.length===0){
+    list.innerHTML = '<li class="empty-note">No discrepancies detected — all line items and header fields align within tolerance.</li>';
+  } else {
+    r.discrepancies.forEach(d=>{
+      const li = document.createElement('li');
+      li.className = 'disc-item sev-'+d.severity;
+      li.innerHTML = `<span>${d.text}</span><span class="sev-badge">${d.severity}</span>`;
+      list.appendChild(li);
+    });
+  }
+  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function hideResults(){
+  document.getElementById('results').style.display='none';
+  document.getElementById('stamp').className='stamp';
+}
+
+document.getElementById('runValidation').addEventListener('click', runValidation);
+
+/* ============ CSV / Excel bulk import ============ */
+function findCol(headers, candidates){
+  const norm = headers.map(h=>normalize(h));
+  for(const c of candidates){
+    const idx = norm.indexOf(normalize(c));
+    if(idx!==-1) return idx;
+  }
+  return -1;
+}
+
+function importRows(kind, dataRows, headers){
+  const body = kind==='inv' ? invBody : recBody;
+  const idxProduct = findCol(headers, ['product','description','item','productname','itemname','itemdescription']);
+  const idxSku = findCol(headers, ['sku','code','itemcode','productcode']);
+  const idxQty = findCol(headers, ['qty','quantity','qtyreceived','quantityreceived']);
+  const idxPrice = findCol(headers, ['price','unitprice','rate','unitcost']);
+
+  if(idxProduct===-1 && idxSku===-1){
+    alert('Could not find a "product" or "sku" column. Expected headers like: product, sku, qty' + (kind==='inv' ? ', price' : '') + '.');
+    return 0;
+  }
+
+  let imported = 0;
+  dataRows.forEach(r=>{
+    if(!r || r.every(c=>c===undefined || c==='')) return;
+    const product = idxProduct!==-1 ? String(r[idxProduct]??'').trim() : '';
+    const sku = idxSku!==-1 ? String(r[idxSku]??'').trim() : '';
+    if(!product && !sku) return;
+    const qty = idxQty!==-1 ? parseFloat(r[idxQty]) || 0 : 0;
+    const price = idxPrice!==-1 ? parseFloat(r[idxPrice]) || 0 : 0;
+
+    const row = makeRow(kind);
+    row.querySelector('.f-product').value = product;
+    row.querySelector('.f-sku').value = sku;
+    row.querySelector('.f-qty').value = qty;
+    if(kind==='inv') row.querySelector('.f-price').value = price;
+    body.appendChild(row);
+    imported++;
+  });
+  return imported;
+}
+
+function handleImportFile(kind, file){
+  const reader = new FileReader();
+  const isCsv = /\.csv$/i.test(file.name);
+  reader.onload = (e)=>{
+    try{
+      let headers, rows;
+      if(isCsv){
+        const text = e.target.result;
+        const lines = text.split(/\r?\n/).filter(l=>l.trim().length>0);
+        const parseLine = (line)=> line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+        headers = parseLine(lines[0]);
+        rows = lines.slice(1).map(parseLine);
+      } else {
+        const wb = XLSX.read(e.target.result, {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+        headers = json[0];
+        rows = json.slice(1);
+      }
+      const body = kind==='inv' ? invBody : recBody;
+      body.innerHTML='';
+      const count = importRows(kind, rows, headers);
+      if(!count){ addRows(3, kind); }
+      hideResults();
+    } catch(err){
+      alert('Could not read that file. Make sure it is a valid CSV or Excel file with a header row.');
+    }
+  };
+  if(isCsv) reader.readAsText(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+document.querySelectorAll('.import-file').forEach(input=>{
+  input.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    handleImportFile(input.dataset.target, file);
+    input.value = '';
+  });
+});
+
+/* ============ Upload & extraction ============ */
+const uploadedFiles = { inv: [], rec: [] };
+
+function fmtBytes(n){
+  if(n < 1024) return n+' B';
+  if(n < 1024*1024) return (n/1024).toFixed(1)+' KB';
+  return (n/(1024*1024)).toFixed(1)+' MB';
+}
+
+function renderFileList(kind){
+  const ul = document.getElementById('filelist-'+kind);
+  ul.innerHTML='';
+  uploadedFiles[kind].forEach((f, idx)=>{
+    const li = document.createElement('li');
+    li.className='file-item';
+    const isImage = /^image\//.test(f.type);
+    const thumbHtml = isImage
+      ? `<img class="file-thumb" src="${URL.createObjectURL(f)}">`
+      : `<div class="file-thumb icon-only">📄</div>`;
+    li.innerHTML = `${thumbHtml}<div class="file-meta"><div class="file-name">${f.name}</div><div class="file-size">${fmtBytes(f.size)}</div></div><button class="file-remove" data-idx="${idx}">✕</button>`;
+    li.querySelector('.file-remove').addEventListener('click', ()=>{
+      uploadedFiles[kind].splice(idx,1);
+      renderFileList(kind);
+    });
+    ul.appendChild(li);
+  });
+  document.getElementById('extract-'+kind).disabled = uploadedFiles[kind].length===0;
+}
+
+function wireDropzone(kind){
+  const dz = document.getElementById('dz-'+kind);
+  const input = document.getElementById('file-'+kind);
+  input.addEventListener('change', ()=>{
+    uploadedFiles[kind].push(...Array.from(input.files));
+    renderFileList(kind);
+    input.value='';
+  });
+  ['dragenter','dragover'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt=> dz.addEventListener(evt, e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e=>{
+    const files = Array.from(e.dataTransfer.files || []);
+    uploadedFiles[kind].push(...files);
+    renderFileList(kind);
+  });
+}
+wireDropzone('inv');
+wireDropzone('rec');
+
+async function extractTextFromPDF(file){
+  if(typeof pdfjsLib === 'undefined') throw new Error('pdf-engine-unavailable');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({data: buf}).promise;
+  let text = '';
+  for(let p=1; p<=doc.numPages; p++){
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    text += content.items.map(it=>it.str).join(' ') + '\n';
+  }
+  return text;
+}
+
+async function extractTextFromImage(file, statusEl){
+  if(typeof Tesseract === 'undefined') throw new Error('ocr-engine-unavailable');
+  const { data } = await Tesseract.recognize(file, 'eng', {
+    logger: m=>{ if(m.status==='recognizing text' && statusEl) statusEl.textContent = `OCR: ${Math.round(m.progress*100)}%`; }
+  });
+  return data.text;
+}
+
+function normalizeDateToISO(raw){
+  if(!raw) return '';
+  const d = new Date(raw);
+  if(isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0,10);
+}
+
+function parseFields(text, kind){
+  const patterns = kind==='inv' ? {
+    number: /invoice\s*(?:no\.?|number|#)\s*[:\-]?\s*([A-Za-z0-9\-\/]{3,20})/i,
+    po: /(?:p\.?o\.?|purchase\s*order)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{3,20})/i,
+    date: /invoice\s*date\s*[:\-]?\s*([A-Za-z0-9,\/\- ]{6,20})/i,
+    due: /due\s*date\s*[:\-]?\s*([A-Za-z0-9,\/\- ]{6,20})/i,
+    total: /(?:grand\s*total|total\s*amount|total\s*due|total)\s*[:\-]?\s*\$?\s*([0-9,]+\.\d{2})/i,
+    tax: /\btax\b\s*[:\-]?\s*\$?\s*([0-9,]+\.\d{2})/i,
+    supplier: /(?:from|supplier|vendor|bill\s*from)\s*[:\-]?\s*([A-Za-z0-9 &.,'\-]{3,50})/i,
+  } : {
+    number: /(?:receipt|grn|delivery\s*note)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{3,20})/i,
+    po: /(?:p\.?o\.?|purchase\s*order)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{3,20})/i,
+    date: /delivery\s*date\s*[:\-]?\s*([A-Za-z0-9,\/\- ]{6,20})/i,
+    supplier: /(?:from|supplier|vendor)\s*[:\-]?\s*([A-Za-z0-9 &.,'\-]{3,50})/i,
+    warehouse: /warehouse\s*[:\-]?\s*([A-Za-z0-9 ,.\-]{3,40})/i,
+    receiver: /receiv(?:ed\s*by|er)\s*[:\-]?\s*([A-Za-z ,.'\-]{3,40})/i,
+  };
+  const out = {};
+  Object.keys(patterns).forEach(key=>{
+    const m = text.match(patterns[key]);
+    if(m) out[key] = m[1].trim();
+  });
+  return out;
+}
+
+function applyExtractedFields(fields, kind){
+  const filled = [];
+  if(kind==='inv'){
+    if(fields.number){ document.getElementById('inv-number').value = fields.number; filled.push('Invoice #'); }
+    if(fields.po){ document.getElementById('inv-po').value = fields.po; filled.push('PO Number'); }
+    if(fields.supplier){ document.getElementById('inv-supplier').value = fields.supplier; filled.push('Supplier'); }
+    if(fields.date){ const iso=normalizeDateToISO(fields.date); if(iso){ document.getElementById('inv-date').value=iso; filled.push('Invoice Date'); } }
+    if(fields.due){ const iso=normalizeDateToISO(fields.due); if(iso){ document.getElementById('inv-due').value=iso; filled.push('Due Date'); } }
+    if(fields.total){ document.getElementById('inv-total').value = fields.total.replace(/,/g,''); filled.push('Total Amount'); }
+    if(fields.tax){ document.getElementById('inv-tax').value = fields.tax.replace(/,/g,''); filled.push('Tax'); }
+  } else {
+    if(fields.number){ document.getElementById('rec-number').value = fields.number; filled.push('Receipt #'); }
+    if(fields.po){ document.getElementById('rec-po').value = fields.po; filled.push('PO Number'); }
+    if(fields.supplier){ document.getElementById('rec-supplier').value = fields.supplier; filled.push('Supplier'); }
+    if(fields.date){ const iso=normalizeDateToISO(fields.date); if(iso){ document.getElementById('rec-date').value=iso; filled.push('Delivery Date'); } }
+    if(fields.warehouse){ document.getElementById('rec-warehouse').value = fields.warehouse; filled.push('Warehouse'); }
+    if(fields.receiver){ document.getElementById('rec-receiver').value = fields.receiver; filled.push('Receiver'); }
+  }
+  return filled;
+}
+
+function showAutofillNotice(msg){
+  const el = document.getElementById('autofillNotice');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function hideAutofillNotice(){
+  document.getElementById('autofillNotice').classList.remove('show');
+}
+
+async function runExtraction(kind){
+  const files = uploadedFiles[kind];
+  if(!files.length) return;
+  const statusEl = document.getElementById('status-'+kind);
+  const boxEl = document.getElementById('extracted-'+kind);
+  const btn = document.getElementById('extract-'+kind);
+  btn.disabled = true;
+  statusEl.className='extract-status working';
+  statusEl.textContent = 'Reading document(s)...';
+
+  let combinedText = '';
+  let usedOCR = false;
+  let hadFailure = false;
+
+  for(const file of files){
+    try{
+      if(file.type === 'application/pdf' || /\.pdf$/i.test(file.name)){
+        combinedText += await extractTextFromPDF(file) + '\n';
+      } else if(/^image\//.test(file.type)){
+        usedOCR = true;
+        statusEl.textContent = 'Running OCR on '+file.name+'...';
+        combinedText += await extractTextFromImage(file, statusEl) + '\n';
+      }
+    } catch(err){
+      hadFailure = true;
+    }
+  }
+
+  if(!combinedText.trim()){
+    statusEl.className='extract-status err';
+    statusEl.textContent = hadFailure
+      ? 'Extraction engine unavailable in this environment. Switch to Manual Entry to continue — this step is normally handled by the production OCR/AI pipeline.'
+      : 'No readable text found in the uploaded file(s). Try Manual Entry instead.';
+    btn.disabled = false;
+    return;
+  }
+
+  const fields = parseFields(combinedText, kind);
+  const filled = applyExtractedFields(fields, kind);
+
+  boxEl.style.display='block';
+  boxEl.textContent = combinedText.trim().slice(0, 2000);
+
+  statusEl.className='extract-status ok';
+  statusEl.textContent = filled.length
+    ? `Auto-filled: ${filled.join(', ')}. ${usedOCR ? 'OCR-based — ' : ''}Review the form and add line items.`
+    : 'Text extracted, but no header fields were confidently recognized — check the preview below and fill the form manually.';
+
+  showAutofillNotice(`${kind==='inv' ? 'Invoice' : 'Receipt'} form auto-filled from "${files[0].name}"${files.length>1?` +${files.length-1} more`:''}. Review every field and the line items table below before running validation.`);
+  showMethod('manual');
+  btn.disabled = false;
+}
+
+document.getElementById('extract-inv').addEventListener('click', ()=>runExtraction('inv'));
+document.getElementById('extract-rec').addEventListener('click', ()=>runExtraction('rec'));
+</script>
+</body>
+</html>
